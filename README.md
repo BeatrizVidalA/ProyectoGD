@@ -19,11 +19,12 @@ interactivo para el Comité Asesor de Preparación Pandémica.
 ## Estructura del repositorio
 
 ```
-notebooks/           Análisis y exploración (orden de ejecución por número)
+notebooks/           Análisis (.ipynb + .py para VS Code) en orden de ejecución
 src/                 Código reutilizable (ingesta, calidad, DW, modelos…)
 data/raw/            Datos crudos descargados (NO se suben al repo)
 data/clean/          Capa limpia (Parquet)
 data/dw/             Data Warehouse (DuckDB)
+data/figs/           Gráficos PNG generados por `00_exploracion.py` (no se suben)
 docs/                P7 propuesta, diccionario de datos, informes PDF
 dashboard/           Tablero (Streamlit / .pbix) y capturas
 contribuciones.md    Quién hizo qué y declaración de uso de IA generativa
@@ -56,6 +57,8 @@ Requisitos: Python 3.11 o 3.12.
    (enero–junio 2020) a `data/raw/`; no hay que bajarlos a mano. En
    [Colab](https://colab.research.google.com) el mismo notebook funciona sin cambios
    (las rutas se resuelven solas).
+   Alternativa sin Jupyter: `python notebooks/00_exploracion.py` (genera dos gráficos en
+   `data/figs/` y el perfilado en `data/profile/`).
 
 ## Fuentes de datos
 
@@ -69,10 +72,15 @@ Descarga por URL «raw» de GitHub, **sin clonar** el repositorio (pesa por su h
 
 ## Estado del proyecto
 
-| Hito | Fecha | Estado |
+| Hito | Fecha (calendario PPT ajustado) | Estado |
 |---|---|---|
-| Hito 1 · Explorar | 6–10 nov | ✅ Repositorio, roles, `00_exploracion.ipynb`, P7 propuesta |
-| Hito 2 · Plataforma | 11–17 nov | ⏳ Pendiente (ingesta 1.143 reportes, Parquet, calidad, DW) |
-| Hito 3 · Análisis y tablero | 17–18 nov | ⏳ Pendiente |
-| Sesión del Comité | 24 nov | ⏳ Pendiente |
-| Entrega final (EVA) | 25 nov 23:59 | ⏳ Pendiente |
+| Lanzamiento | Mié 4 nov | ✅ Repositorio y roles (nombres por completar) |
+| Hito 1 · Explorar | Mar 10 nov | ✅ Notebook `00_exploracion` ejecutado (350.945 filas, 0 errores) + P7 propuesta |
+| Test 3 | Mié 11 nov | — |
+| Hito 2 · Plataforma | Mar 17 nov | ⏳ Pendiente (ingesta 1.143 reportes, Parquet, calidad, DW) |
+| Hito 3 + ensayo | Mié 18 nov | ⏳ Pendiente |
+| Sesión del Comité | Mar 24 nov | ⏳ Pendiente |
+| Entrega final (EVA) | Mié 25 nov, 23:59 | ⏳ Pendiente |
+
+> Las fechas están ajustadas según el PPT respecto del PDF del enunciado; en caso de
+> diferencia, manda EVA.

@@ -1,6 +1,7 @@
-# Datos crudos: se descargan con el código, no se suben (R1)
+# Datos crudos y derivados: se descargan/generan con el código, no se suben (R1)
 data/raw/
 data/profile/
+data/figs/
 
 # Entornos y cachés
 .venv/
