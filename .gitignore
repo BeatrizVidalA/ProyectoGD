@@ -1,0 +1,20 @@
+# Datos crudos: se descargan con el código, no se suben (R1)
+data/raw/
+data/profile/
+
+# Entornos y cachés
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Salidas de perfilado
+perfilado*.html
+
+# Instalador temporal
+python-*.exe
+
+# Material del curso (no forma parte del entregable)
+Enunciado_*.pdf
+PPT_*.pptx
