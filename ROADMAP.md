@@ -32,8 +32,16 @@ ni subir los CSV crudos**.
 
 ## Próximos pasos inmediatos
 
-- [ ] Inicializar el repositorio git (el directorio aún no es un repo).
-- [ ] Crear estructura de carpetas: `datos/{cruda,limpia,analitica}`, `notebooks/`, `src/`, `informes/`, `tablero/`.
-- [ ] Script de descarga de los reportes diarios de JHU (con caché y verificación de suma).
-- [ ] `00_exploracion.ipynb` sobre enero–junio de 2020 (los cinco esquemas).
-- [ ] Proponer la pregunta P7 y justificar la fuente externa.
+- [x] Inicializar el repositorio git (el directorio aún no es un repo).
+- [x] Crear estructura de carpetas: `data/{raw,clean,dw}`, `notebooks/`, `src/`, `docs/`, `dashboard/`.
+- [x] `00_exploracion.ipynb` sobre enero–junio de 2020 (los cinco esquemas).
+- [x] Proponer la pregunta P7 y justificar la fuente externa.
+- [ ] Script de descarga de los **1.143** reportes (hoy el notebook 00 descarga solo ene–jun 2020, con caché).
+- [ ] Verificación de integridad de la descarga (conteo de filas/archivos) para el Hito 2.
+
+## Hito 1 · completado (6-nov-2026)
+
+- `notebooks/00_exploracion.ipynb` ejecutado de punta a punta: 350.945 filas, 0 errores.
+- `docs/revision_hito1.md`: revisión contra el enunciado y hallazgos.
+- `docs/P7_propuesta.md`: P7 con Banco Mundial (65+) y respaldo OxCGRT.
+- Pendiente administrativo: completar nombres de roles y subir el repo a GitHub.
