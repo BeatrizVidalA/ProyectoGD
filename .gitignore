@@ -2,9 +2,11 @@
 data/raw/
 data/profile/
 data/figs/
+data/quality/
 
 # Entornos y cachés
 .venv/
+.venv-hito1/
 venv/
 __pycache__/
 *.pyc
