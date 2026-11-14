@@ -1,0 +1,4 @@
+# Python 3.12; entorno del Hito 1 más dos dependencias de almacenamiento.
+-r requirements-hito1-lock.txt
+pyarrow>=18,<25
+duckdb>=1.1,<2
