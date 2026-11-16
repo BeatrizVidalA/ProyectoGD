@@ -19,7 +19,17 @@ Conforme a lo indicado en el enunciado (sección 8), declaramos el uso de IA gen
   crear la plantilla inicial del repositorio (README, estructura de carpetas), generar el
   código base del notebook `00_exploracion.ipynb` y del `00_exploracion.py` (nombres de
   columnas en español) y su revisión técnica.
-- Todo el código fue **revisado y comprendido por el equipo**; las conclusiones del
-  perfilado y los análisis son verificables ejecutando el notebook.
+- **Codex (OpenAI)**: asistencia en auditoría, correcciones y validación del Hito 1;
+  implementación y revisión de la plataforma del Hito 2, pruebas, documentación y
+  reorganización del README tomando el ejemplo como referencia de presentación.
+  No se copió código, datos, gráficos ni estilos del proyecto de referencia.
+  En el cierre del 16-nov-2026 también asistió con el balance exhaustivo de
+  observaciones y hechos, pruebas de integridad y divulgación, contraste legal,
+  estimación de arquitectura en nube y comparación concreta de ambos README.
+  También diagnosticó un fallo nativo de cierre y, con autorización, actualizó
+  PyArrow localmente a 25.0.1 y repitió carga, controles y regresión del Hito 1.
+- El equipo deberá revisar y comprender el código antes de entregarlo. La ejecución
+  automatizada no acredita comprensión individual ni permite atribuir trabajo a
+  integrantes cuyos nombres y aportes todavía no están registrados.
 
 *(Esta sección se actualizará a medida que avance el proyecto.)*

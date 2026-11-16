@@ -6,10 +6,42 @@ from .ingesta import SERIES
 from .territorios import canonizar
 
 
+def serie_us_por_lotes(archivo, destino):
+    """Series anchas de 1143 fechas sin millones de strings en Pandas."""
+    import csv
+    import pyarrow as pa
+    import pyarrow.csv as pc
+    import pyarrow.parquet as pq
+    with open(archivo, encoding="utf-8-sig", newline="") as f:
+        columnas = next(csv.reader(f))
+    fechas = [c for c in columnas if "/" in c and c[0].isdigit()]
+    if len(fechas) != 1143 or fechas[0] != "1/22/20" or fechas[-1] != "3/9/23":
+        raise ValueError(f"Cobertura inesperada: {archivo}")
+    codigos = [c for c in ["UID", "iso2", "iso3", "code3", "FIPS", "Admin2", "Province_State", "Country_Region", "Combined_Key"] if c in columnas]
+    tipos = {c: pa.string() for c in codigos}
+    tipos.update({c: pa.int64() for c in fechas})
+    nombres = {c: "fecha_" + pd.to_datetime(c, format="%m/%d/%y").strftime("%Y_%m_%d") for c in fechas}
+    nombres.update({"UID": "uid", "FIPS": "fips", "Admin2": "admin2", "Province_State": "provincia_estado",
+                    "Country_Region": "region_pais", "Lat": "latitud", "Long_": "longitud",
+                    "Combined_Key": "clave_combinada", "Population": "poblacion"})
+    lector = pc.open_csv(archivo, convert_options=pc.ConvertOptions(column_types=tipos, null_values=[""], strings_can_be_null=True))
+    schema = pa.schema([pa.field(nombres.get(f.name, f.name), f.type) for f in lector.schema])
+    filas = 0
+    with pq.ParquetWriter(destino, schema, compression="zstd") as escritor:
+        for batch in lector:
+            filas += batch.num_rows
+            escritor.write_batch(pa.RecordBatch.from_arrays(batch.columns, schema=schema))
+    if filas != 3342:
+        raise ValueError(f"Cantidad inesperada de condados de serie US: {filas}")
+
+
 def series(entradas, limpio, pais_ids):
     resultados, linaje = [], []
     for nombre in SERIES:
         archivo = entradas.obtener(nombre, "serie")
+        if "_US" in nombre:
+            serie_us_por_lotes(archivo, limpio / nombre.replace(".csv", ".parquet"))
+            continue
         d = pd.read_csv(archivo, dtype="string", keep_default_na=False).replace("", pd.NA)
         fechas = [c for c in d if "/" in c and c[0].isdigit()]
         if len(fechas) != 1143 or fechas[0] != "1/22/20" or fechas[-1] != "3/9/23":
@@ -20,8 +52,6 @@ def series(entradas, limpio, pais_ids):
                          "Province_State": "provincia_estado", "Country_Region": "region_pais", "Long_": "longitud", "Combined_Key": "clave_combinada", "Population": "poblacion"})
         # Series anchas auxiliares preservadas en Parquet, incluidos los condados de EE.UU.
         d.rename(columns=renombrar).to_parquet(limpio / nombre.replace(".csv", ".parquet"), index=False)
-        if "_US" in nombre:
-            continue
         metrica = "confirmados" if "confirmed" in nombre else "fallecidos" if "deaths" in nombre else "recuperados"
         ids = d["Country/Region"].map(lambda x: pais_ids.get(canonizar(x, "", "")[0]))
         if ids.isna().any():
@@ -69,7 +99,9 @@ def integrar(entradas, limpio, dim_paises, incluir_bm=True):
     cobertura = [{"fuente": "OWID", "codigo_fuente": r.iso3_fuente, "iso3": r.iso3,
                   "coincide": pd.notna(r.pais_id), "motivo": "coincide" if pd.notna(r.pais_id) else "agregado/no país JHU o sin correspondencia"}
                  for r in d[["iso3_fuente", "iso3", "pais_id"]].drop_duplicates().itertuples()]
-    bm = pd.DataFrame(columns=["pais_id", "anio", "indicador", "valor", "iso3_fuente", "fila_origen", "archivo_origen", "sha256_origen"])
+    bm = pd.DataFrame({c: pd.Series(dtype=t) for c, t in {
+        "pais_id": "string", "anio": "Int64", "indicador": "string", "valor": "float64",
+        "iso3_fuente": "string", "fila_origen": "Int64", "archivo_origen": "string", "sha256_origen": "string"}.items()})
     if incluir_bm:
         path = entradas.obtener("worldbank_65plus.json", "externa")
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -91,3 +123,28 @@ def integrar(entradas, limpio, dim_paises, incluir_bm=True):
         if bm.duplicated(["pais_id", "anio", "indicador"]).any():
             raise ValueError("Banco Mundial no es único por país/año/indicador")
     return vac, bm, pd.DataFrame(cobertura)
+
+
+def detalle_cruces(con, limpio):
+    """Distingue ausencia de código, de fechas y de valores del indicador."""
+    d = con.execute("""SELECT q.pais_id,q.pais,q.iso3,coalesce(v.filas,0) filas_owid,
+      coalesce(v.con_porcentaje,0) fechas_owid_con_porcentaje,coalesce(b.con_valor,0) anios_bm_con_valor
+      FROM calidad_pais q LEFT JOIN (SELECT pais_id,count(*) filas,
+      count(people_vaccinated_per_hundred) con_porcentaje FROM fact_vacunacion GROUP BY pais_id) v USING(pais_id)
+      LEFT JOIN (SELECT pais_id,count(valor) con_valor FROM fact_indicador_anual GROUP BY pais_id) b USING(pais_id)
+      ORDER BY q.pais""").fetchdf()
+    owid = set(pd.read_parquet(limpio / "owid_vacunacion_todas.parquet", columns=["pais_id"]).pais_id.dropna())
+    archivo_bm = limpio / "banco_mundial_todos.parquet"
+    bm = set(pd.read_parquet(archivo_bm, columns=["pais_id"]).pais_id.dropna()) if archivo_bm.exists() else set()
+    d["owid"] = d.filas_owid.gt(0)
+    d["banco_mundial"] = d.anios_bm_con_valor.gt(0)
+    d["motivo_owid"] = ["cruce por país/fecha" if r.filas_owid else
+        "entidad sin ISO3 JHU" if pd.isna(r.iso3) else
+        "código no presente en la fuente" if r.pais_id not in owid else
+        "sin fechas en la ventana JHU" for r in d.itertuples()]
+    d["motivo_banco_mundial"] = ["cruce país/año con valor" if r.anios_bm_con_valor else
+        "fuente no solicitada" if not archivo_bm.exists() else
+        "entidad sin ISO3 JHU" if pd.isna(r.iso3) else
+        "código no presente en la fuente" if r.pais_id not in bm else
+        "sin valores 2020–2022 para el indicador" for r in d.itertuples()]
+    return d

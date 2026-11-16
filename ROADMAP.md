@@ -25,7 +25,7 @@ el repositorio completo ni subir los CSV crudos**.
 1. **Canalización ejecutable de un comando** — descarga → limpieza → DW → análisis → tablero.
 2. **Capas**: cruda (CSV tal cual) → limpia (Parquet) → analítica (DW de R3). Comparar
    tamaño en disco y tiempo de lectura CSV vs Parquet.
-3. **Revisiones negativas**: registrar acumulados que retroceden (84 países) en una tabla de
+3. **Revisiones negativas**: registrar acumulados que retroceden (84 países en la serie revisada de casos) en una tabla de
    auditoría en vez de borrarlos; casos diarios con `diff()`, media móvil solo sobre diarios.
 4. **Cambio de granularidad de Chile**: país hasta el 19-may-2020; regiones + Unknown desde
    el **20-may-2020**.
@@ -58,10 +58,16 @@ docs/revision_hito1.md            revisión del Hito 1
 requirements.txt  contribuciones.md  .gitignore
 ```
 
-## Pendiente antes del Hito 2 (17-nov)
+## Cierre técnico del Hito 2 y pendientes del equipo
 
 - [ ] Nombres reales en README y contribuciones.
-- [ ] Crear repo GitHub y compartirlo con docente y Nicolás (regla del PPT).
+- [x] Repositorio oficial identificado: `BeatrizVidalA/ProyectoGD`, rama `Beatriz`.
+- [ ] Comprobar que está compartido con docente y Nicolás (no se verificaron permisos).
 - [ ] Confirmar las fechas en EVA.
-- [ ] Script de descarga de los **1.143** reportes (hoy el notebook baja solo ene–jun 2020 con caché).
-- [ ] Verificación de integridad (conteo de archivos/filas) para el pipeline.
+- [x] Pipeline de los **1.143** reportes, cinco series y UID; el notebook Hito 1 sigue acotado a ene–jun.
+- [x] Tres capas, seis dimensiones de calidad, estrella, dos externas y consultas OLAP.
+- [x] Balance explícito: 122 observaciones en cuarentena y 18 consolidadas, sin perder crudos ni linaje.
+- [x] Diagrama equivalente en AWS y estimación mensual, sin desplegar recursos.
+- [x] Control SQL de divulgación y pérdida medida; integración visual pendiente del Hito 3.
+
+La evidencia ejecutada y las limitaciones están en [la revisión del Hito 2](docs/revision_hito2.md).

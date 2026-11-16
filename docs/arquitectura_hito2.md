@@ -30,8 +30,13 @@ dependa del clon o de vistas con rutas absolutas después de construido.
 
 DuckDB ofrece SQL analítico, lectura Parquet tipada, agregaciones y ventanas, claves
 de hechos y consultas locales sin servidor. Es apropiado para un equipo académico
-y este volumen. El proceso limita la memoria a 768 MB y usa dos hilos para las
+y este volumen. El proceso limita la memoria DuckDB a 128 MB y usa un hilo para las
 operaciones DuckDB; Pandas/Arrow tienen memoria adicional.
+
+Las series anchas estadounidenses se convierten con Arrow por lotes para no
+construir millones de strings en Pandas. Las validaciones pesadas de Hito 1 y
+Hito 2 se ejecutan secuencialmente en equipos con poca RAM disponible. El roll-up
+usa equijoins; una prueba impide reintroducir el join anidado observado a escala.
 
 SQLite evita instalar un motor adicional, pero no ofrece esta integración directa
 con Parquet. PostgreSQL sería adecuado para concurrencia y servicio centralizado,
@@ -45,8 +50,10 @@ de R1 queda pendiente y no se presenta como implementada.
 
 ## Estrella e identidad
 
-`fact_covid` tiene clave primaria territorio × día y referencias a `dim_fecha` y
-`dim_territorio`. Esta última contiene padre, país, nivel, población y coordenadas.
+`fact_covid` tiene clave lógica territorio × día y referencias lógicas a `dim_fecha` y
+`dim_territorio`. Se comprueban unicidad e integridad referencial por SQL antes de
+publicar la carga. Las dimensiones pequeñas conservan PK físicas; se evitan índices
+ART grandes en las tablas de hechos, para limitar memoria. Esta última dimensión contiene padre, país, nivel, población y coordenadas.
 `dim_pais` es una vista de los nodos nacionales. Las unidades históricas sin match
 exacto reciben una clave hash estable de su identidad publicada y metadatos faltantes;
 no se les asignan población o coordenadas de una unidad moderna por semejanza.
@@ -71,7 +78,10 @@ las comparaciones posteriores deben comprobarla, especialmente China/dependencia
 
 Se conservan todas las observaciones en la tabla normalizada. En la clave canónica,
 si casos y fallecidos coinciden se representa un hecho con varios orígenes. Si
-contradicen, la clave queda en cuarentena: `grupos_observados.versiones>1`.
+contradicen, la clave queda en cuarentena: `grupos_observados.versiones=2`.
+Ese campo es un indicador (1 coherente, 2 contradictorio), no el número de textos
+distintos. Se calcula con mínimos, máximos y conteos de nulos, sin un DISTINCT
+por cada grupo de la historia completa.
 Se puede inspeccionar cada versión mediante `v_linaje`. El total país de esa fecha
 queda NULL si existe un conflicto o un componente no informado; no se subestima
 silenciosamente. Reglas de exactitud no eligen una versión supuestamente verdadera.
@@ -120,6 +130,9 @@ orígenes de una fecha y la víspera; deltas tras brechas requieren consultar ad
 `fecha_anterior` (los diarios de esas brechas son NULL).
 
 ## Benchmark y límites de reproducción
+
+El [equivalente en AWS y presupuesto](arquitectura_nube.md) documenta la extensión
+de arquitectura y costo mensual de R1. Es una propuesta; no se desplegaron recursos.
 
 El benchmark compara 10.000 registros tipados idénticos, 2.000 de cada esquema,
 en CSV y Parquet ZSTD. Realiza cinco lecturas alternadas tras una lectura de

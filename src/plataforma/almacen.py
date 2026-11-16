@@ -9,12 +9,19 @@ def sql_texto(valor):
 
 
 def tabla_df(con, nombre, df):
-    con.register("entrada_pandas", df)
-    con.execute(f"CREATE TABLE {nombre} AS SELECT * FROM entrada_pandas")
-    con.unregister("entrada_pandas")
+    import pyarrow as pa
+    # Mantener buffers Arrow nativos durante toda la consulta. Evita depender
+    # de objetos Python celda por celda al liberar resultados en Windows.
+    entrada = pa.Table.from_pandas(df, preserve_index=False)
+    con.register("entrada_arrow", entrada)
+    try:
+        con.execute(f"CREATE TABLE {nombre} AS SELECT * FROM entrada_arrow")
+    finally:
+        con.unregister("entrada_arrow")
 
 
 def construir_estrella(con, parquet, uid):
+    print("  DW: tabla unificada y correspondencias", flush=True)
     con.execute(f"CREATE TABLE unificada AS SELECT * FROM read_parquet({sql_texto(Path(parquet).as_posix() + '/diarios_*.parquet')})")
     firmas = con.execute("""SELECT DISTINCT region_pais, provincia_estado, admin2, fips FROM unificada
                              ORDER BY region_pais, provincia_estado, admin2, fips""").fetchdf()
@@ -33,28 +40,30 @@ def construir_estrella(con, parquet, uid):
       FROM unificada u JOIN mapa_territorial m ON u.region_pais IS NOT DISTINCT FROM m.region_pais
       AND u.provincia_estado IS NOT DISTINCT FROM m.provincia_estado AND u.admin2 IS NOT DISTINCT FROM m.admin2
       AND u.fips IS NOT DISTINCT FROM m.fips""")
-    con.execute("CREATE UNIQUE INDEX obs_id ON observacion_mapa(observacion_id)")
     con.execute("""CREATE TABLE grupos_observados AS SELECT o.territorio_id,u.fecha_reporte fecha,
-      count(*) n_fuentes, count(DISTINCT struct_pack(c:=u.confirmados,d:=u.fallecidos)) versiones,
+      count(*) n_fuentes,
+      CASE WHEN min(u.confirmados) IS DISTINCT FROM max(u.confirmados)
+          OR min(u.fallecidos) IS DISTINCT FROM max(u.fallecidos)
+          OR (count(u.confirmados)>0 AND count(u.confirmados)<count(*))
+          OR (count(u.fallecidos)>0 AND count(u.fallecidos)<count(*))
+        THEN 2 ELSE 1 END versiones,
       min(u.confirmados) confirmados,min(u.fallecidos) fallecidos
       FROM unificada u JOIN observacion_mapa o USING(archivo_origen,fila_origen,fecha_reporte)
       GROUP BY o.territorio_id,u.fecha_reporte""")
     # Una clave con casos/muertes contradictorios se conserva en crudo y se pone en cuarentena.
-    con.execute("""CREATE TABLE fact_covid (
-      territorio_id VARCHAR REFERENCES dim_territorio(territorio_id), fecha DATE REFERENCES dim_fecha(fecha),
-      confirmados DOUBLE, fallecidos DOUBLE, casos_nuevos DOUBLE, fallecidos_nuevos DOUBLE,
-      fecha_anterior DATE, confirmados_anteriores DOUBLE, fallecidos_anteriores DOUBLE,
-      dias_desde_anterior INTEGER, delta_confirmados DOUBLE, delta_fallecidos DOUBLE,
-      n_fuentes BIGINT, PRIMARY KEY(territorio_id,fecha))""")
-    con.execute("""INSERT INTO fact_covid WITH anteriores AS (
+    print("  DW: hechos únicos y diarios firmados", flush=True)
+    # En un DW de carga cerrada, índices ART sobre millones de claves consumen RAM
+    # adicional fuera del buffer. Las claves de hechos son lógicas y se validan por SQL
+    # antes de publicar. Las dimensiones pequeñas conservan su PK física.
+    con.execute("""CREATE TABLE fact_covid AS WITH anteriores AS (
       SELECT *,lag(fecha) OVER w fecha_anterior,lag(confirmados) OVER w confirmados_anteriores,
       lag(fallecidos) OVER w fallecidos_anteriores FROM grupos_observados WHERE versiones=1
       WINDOW w AS (PARTITION BY territorio_id ORDER BY fecha))
       SELECT territorio_id,fecha,confirmados,fallecidos,
-      CASE WHEN date_diff('day',fecha_anterior,fecha)=1 THEN confirmados-confirmados_anteriores END,
-      CASE WHEN date_diff('day',fecha_anterior,fecha)=1 THEN fallecidos-fallecidos_anteriores END,
-      fecha_anterior,confirmados_anteriores,fallecidos_anteriores,date_diff('day',fecha_anterior,fecha)::INTEGER,
-      confirmados-confirmados_anteriores,fallecidos-fallecidos_anteriores,n_fuentes FROM anteriores""")
+      CASE WHEN date_diff('day',fecha_anterior,fecha)=1 THEN confirmados-confirmados_anteriores END casos_nuevos,
+      CASE WHEN date_diff('day',fecha_anterior,fecha)=1 THEN fallecidos-fallecidos_anteriores END fallecidos_nuevos,
+      fecha_anterior,confirmados_anteriores,fallecidos_anteriores,date_diff('day',fecha_anterior,fecha)::INTEGER dias_desde_anterior,
+      confirmados-confirmados_anteriores delta_confirmados,fallecidos-fallecidos_anteriores delta_fallecidos,n_fuentes FROM anteriores""")
     con.execute("""CREATE VIEW v_linaje AS SELECT o.*,u.sha256_origen,u.etapa,u.region_pais,u.provincia_estado,u.admin2,
       u.confirmados,u.fallecidos,g.versiones,g.n_fuentes,g.versiones=1 aceptada
       FROM observacion_mapa o JOIN unificada u USING(archivo_origen,fila_origen,fecha_reporte)
@@ -64,11 +73,15 @@ def construir_estrella(con, parquet, uid):
       FROM observacion_mapa GROUP BY firma_id) r USING(firma_id)""")
     # Preferir el subtotal observado cuando coexiste con descendientes del mismo dominio.
     # Las dependencias con ISO propio son dominios disjuntos en la convención de JHU.
+    print("  DW: jerarquías sin subconsultas correlacionadas", flush=True)
     con.execute("""CREATE VIEW v_rollup_territorial AS SELECT f.*,d.pais_id,d.nivel,d.poblacion,
-      NOT EXISTS(SELECT 1 FROM fact_covid padre WHERE padre.fecha=f.fecha AND
-        (padre.territorio_id=d.padre_id AND NOT coalesce(d.es_dependencia,false)
-         OR padre.territorio_id=d.pais_id AND f.territorio_id<>d.pais_id AND NOT coalesce(d.es_dependencia,false))) incluido
-      FROM fact_covid f JOIN dim_territorio d USING(territorio_id)""")
+      NOT ((padre.territorio_id IS NOT NULL AND NOT
+             (d.nivel='region' AND coalesce(d.es_dependencia,false)))
+           OR (pais.territorio_id IS NOT NULL AND f.territorio_id<>d.pais_id
+               AND NOT coalesce(d.es_dependencia,false))) incluido
+      FROM fact_covid f JOIN dim_territorio d USING(territorio_id)
+      LEFT JOIN fact_covid padre ON padre.territorio_id=d.padre_id AND padre.fecha=f.fecha
+      LEFT JOIN fact_covid pais ON pais.territorio_id=d.pais_id AND pais.fecha=f.fecha""")
     con.execute("""CREATE TABLE agregado_pais AS WITH suma AS (
       SELECT pais_id,fecha,count(*) territorios,count(confirmados) con_casos,count(fallecidos) con_muertes,
       sum(confirmados) casos,sum(fallecidos) muertes FROM v_rollup_territorial WHERE incluido GROUP BY pais_id,fecha),
@@ -84,8 +97,10 @@ def construir_estrella(con, parquet, uid):
       SELECT *,CASE WHEN date_diff('day',fecha_anterior,fecha)=1 THEN confirmados-confirmados_anteriores END casos_nuevos,
       CASE WHEN date_diff('day',fecha_anterior,fecha)=1 THEN fallecidos-fallecidos_anteriores END fallecidos_nuevos
       FROM a""")
-    con.execute("CREATE UNIQUE INDEX pais_fecha ON fact_pais(pais_id,fecha)")
     con.execute("""CREATE VIEW dim_pais AS SELECT * FROM dim_territorio WHERE nivel='pais'""")
+    con.execute("""CREATE VIEW v_linaje_rollup AS SELECT l.*,r.incluido incluido_total_pais
+      FROM v_linaje l LEFT JOIN v_rollup_territorial r
+      ON l.territorio_id=r.territorio_id AND l.fecha_reporte=r.fecha""")
     return dim
 
 
@@ -93,9 +108,6 @@ def cargar_externas(con, serie, linaje, vac, bm, cruces):
     for nombre, df in [("fact_serie_pais", serie), ("linaje_series", linaje), ("fact_vacunacion", vac),
                        ("fact_indicador_anual", bm), ("cruces_externos", cruces)]:
         tabla_df(con, nombre, df)
-    con.execute("CREATE UNIQUE INDEX serie_pk ON fact_serie_pais(pais_id,fecha)")
-    con.execute("CREATE UNIQUE INDEX vacuna_pk ON fact_vacunacion(pais_id,fecha)")
-    con.execute("CREATE UNIQUE INDEX bm_pk ON fact_indicador_anual(pais_id,anio,indicador)")
     con.execute("""CREATE VIEW v_pais_vacunacion AS SELECT f.*,d.pais,d.iso3,v.people_vaccinated,
       v.people_fully_vaccinated,v.people_vaccinated_per_hundred,v.people_fully_vaccinated_per_hundred,
       v.archivo_origen archivo_vacunacion,v.fila_origen fila_vacunacion
@@ -113,8 +125,8 @@ def cargar_externas(con, serie, linaje, vac, bm, cruces):
 def divulgacion(con):
     con.execute("""CREATE VIEW v_control_divulgacion AS SELECT f.territorio_id,f.fecha,
       d.pais_id,d.poblacion,d.nivel,
-      coalesce(d.poblacion<5000,true) AND (f.confirmados BETWEEN 1 AND 4 OR f.fallecidos BETWEEN 1 AND 4
-        OR f.casos_nuevos BETWEEN 1 AND 4 OR f.fallecidos_nuevos BETWEEN 1 AND 4) suprimir,
+      coalesce(d.poblacion<5000,true) AND coalesce((f.confirmados BETWEEN 1 AND 4 OR f.fallecidos BETWEEN 1 AND 4
+        OR f.casos_nuevos BETWEEN 1 AND 4 OR f.fallecidos_nuevos BETWEEN 1 AND 4),false) suprimir,
       f.confirmados,f.fallecidos,f.casos_nuevos,f.fallecidos_nuevos
       FROM fact_covid f JOIN dim_territorio d USING(territorio_id)""")
     # Si alguna celda es sensible se ocultan todas las métricas de esa fila, incluidas tasas futuras.
@@ -139,6 +151,54 @@ def divulgacion(con):
       CASE WHEN NOT p.suprimir THEN f.fallecidos_nuevos END fallecidos_nuevos
       FROM fact_covid f JOIN dim_territorio d USING(territorio_id)
       JOIN (SELECT pais_id,bool_or(suprimir) suprimir FROM v_control_divulgacion GROUP BY pais_id) p USING(pais_id)""")
+
+
+def metricas_divulgacion(con):
+    """Pérdida de celdas, no suma de personas sobre acumulados repetidos."""
+    r = con.execute("""SELECT count(*) filas_evaluadas,
+      count(*) FILTER(WHERE suprimir) filas_supresion_primaria,
+      sum(coalesce((confirmados BETWEEN 1 AND 4)::INT,0)+coalesce((fallecidos BETWEEN 1 AND 4)::INT,0)+
+          coalesce((casos_nuevos BETWEEN 1 AND 4)::INT,0)+coalesce((fallecidos_nuevos BETWEEN 1 AND 4)::INT,0)) celdas_1a4
+      FROM v_control_divulgacion""").fetchdf().to_dict("records")[0]
+    r["filas_cierre_conservador"] = con.execute("SELECT count(*) FROM v_publica_segura WHERE suprimir").fetchone()[0]
+    r["condados_uid_menores_5000"] = con.execute("SELECT count(*) FROM dim_territorio WHERE pais='US' AND nivel='condado' AND poblacion<5000").fetchone()[0]
+    # Unir por los pocos países, no fact_covid contra una expansión de sí misma
+    # de más de cuatro millones de claves. La decisión es idéntica a la vista.
+    r["celdas_no_nulas_ocultas"] = con.execute("""WITH paises AS (
+      SELECT pais_id,bool_or(suprimir) suprimir FROM v_control_divulgacion GROUP BY pais_id)
+      SELECT sum((f.confirmados IS NOT NULL)::INT+(f.fallecidos IS NOT NULL)::INT+
+      (f.casos_nuevos IS NOT NULL)::INT+(f.fallecidos_nuevos IS NOT NULL)::INT)
+      FROM v_control_divulgacion f JOIN paises p USING(pais_id) WHERE p.suprimir""").fetchone()[0]
+    return r
+
+
+def trazar(con, territorio, fecha):
+    """Materializa solo dos días y el mapa solicitado, sin expandir todo el linaje."""
+    return con.execute("""WITH mapa AS MATERIALIZED (
+      SELECT m.*,d.pais_id,d.padre_id,d.nivel,d.es_dependencia FROM mapa_territorial m
+      JOIN dim_territorio d USING(territorio_id) WHERE d.territorio_id=? OR d.pais_id=?),
+      obs AS MATERIALIZED (SELECT * FROM unificada
+        WHERE fecha_reporte BETWEEN CAST(? AS DATE)-1 AND CAST(? AS DATE)),
+      hechos AS MATERIALIZED (SELECT territorio_id,fecha FROM fact_covid
+        WHERE fecha BETWEEN CAST(? AS DATE)-1 AND CAST(? AS DATE)),
+      grupos AS MATERIALIZED (SELECT * FROM grupos_observados
+        WHERE fecha BETWEEN CAST(? AS DATE)-1 AND CAST(? AS DATE))
+      SELECT u.archivo_origen,u.fila_origen,u.fecha_reporte,d.territorio_id,d.pais_id,
+      u.region_pais,u.provincia_estado,u.admin2,u.confirmados,u.fallecidos,u.sha256_origen,
+      g.versiones,g.n_fuentes,g.versiones=1 aceptada,
+      CASE WHEN f.territorio_id IS NOT NULL THEN
+        NOT ((padre.territorio_id IS NOT NULL AND NOT (d.nivel='region' AND coalesce(d.es_dependencia,false)))
+             OR (pais.territorio_id IS NOT NULL AND f.territorio_id<>d.pais_id AND NOT coalesce(d.es_dependencia,false)))
+      END incluido_total_pais
+      FROM obs u JOIN mapa d ON u.region_pais IS NOT DISTINCT FROM d.region_pais
+      AND u.provincia_estado IS NOT DISTINCT FROM d.provincia_estado AND u.admin2 IS NOT DISTINCT FROM d.admin2
+      AND u.fips IS NOT DISTINCT FROM d.fips
+      LEFT JOIN grupos g ON g.territorio_id=d.territorio_id AND g.fecha=u.fecha_reporte
+      LEFT JOIN hechos f ON f.territorio_id=d.territorio_id AND f.fecha=u.fecha_reporte
+      LEFT JOIN hechos padre ON padre.territorio_id=d.padre_id AND padre.fecha=u.fecha_reporte
+      LEFT JOIN hechos pais ON pais.territorio_id=d.pais_id AND pais.fecha=u.fecha_reporte
+      ORDER BY u.fecha_reporte,u.archivo_origen,u.fila_origen""",
+      [territorio, territorio, fecha, fecha, fecha, fecha, fecha, fecha]).fetchdf()
 
 
 OLAP = {

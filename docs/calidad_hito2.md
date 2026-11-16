@@ -1,5 +1,19 @@
 # Calidad y gobierno — Hito 2
 
+## Cifras de retrocesos y producto de origen
+
+La serie global revisada presenta descensos de confirmados en **84 países y
+171 días-país**. No es el mismo producto que los CSV diarios publicados en cada
+fecha. En los totales nacionales derivados de esos reportes se observan descensos
+de casos en **159 países / 350 días-país** y de muertes en **111 / 272**;
+la unión es **166 países y 536 días-país**. No se suman 350 y 272 como si fueran
+días distintos: ambas métricas pueden retroceder el mismo día.
+
+La diferencia entre productos incluye revisiones retrospectivas, cobertura e
+identidades/granularidad históricas. Se conservan ambos productos separados;
+no se fuerzan los reportes a reproducir la cifra 84 de las series revisadas.
+Estas cifras describen los datos, no un descenso demostrado de contagios reales.
+
 Las reglas de `src/plataforma/calidad.py` corren automáticamente en cada carga.
 `reglas_calidad.csv` registra dimensión, descripción, valor, operador, umbral, estado
 y limitación. OK satisface el umbral, ALERTA lo incumple y NO_EVALUABLE requiere

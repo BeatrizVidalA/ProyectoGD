@@ -3,6 +3,13 @@ data/raw/
 data/profile/
 data/figs/
 data/quality/
+# Artefactos binarios locales: entregar solo la carga validada en el ZIP académico.
+# No agregar por accidente DW grandes ni directorios de intentos incompletos a GitHub.
+data/clean/
+data/dw/
+data/dw/**/temporal/
+*.duckdb.wal
+data/hito2_actual_*.tmp
 
 # Entornos y cachés
 .venv/

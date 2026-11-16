@@ -1,0 +1,46 @@
+{
+  "fuente": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+  "publicacion": "2026-11-16T07:13:00Z",
+  "tarifas": [
+    {
+      "uso": "Requests-Tier2",
+      "unidad": "Requests",
+      "inicio": "0",
+      "fin": "Inf",
+      "usd": "0.0000004000",
+      "descripcion": "$0.004 per 10,000 GET and all other requests"
+    },
+    {
+      "uso": "Requests-Tier1",
+      "unidad": "Requests",
+      "inicio": "0",
+      "fin": "Inf",
+      "usd": "0.0000050000",
+      "descripcion": "$0.005 per 1,000 PUT, COPY, POST, or LIST requests"
+    },
+    {
+      "uso": "TimedStorage-ByteHrs",
+      "unidad": "GB-Mo",
+      "inicio": "0",
+      "fin": "51200",
+      "usd": "0.0230000000",
+      "descripcion": "$0.023 per GB - first 50 TB / month of storage used"
+    },
+    {
+      "uso": "TimedStorage-ByteHrs",
+      "unidad": "GB-Mo",
+      "inicio": "51200",
+      "fin": "512000",
+      "usd": "0.0220000000",
+      "descripcion": "$0.022 per GB - next 450 TB / month of storage used"
+    },
+    {
+      "uso": "TimedStorage-ByteHrs",
+      "unidad": "GB-Mo",
+      "inicio": "512000",
+      "fin": "Inf",
+      "usd": "0.0210000000",
+      "descripcion": "$0.021 per GB - storage used / month over 500 TB"
+    }
+  ]
+}
