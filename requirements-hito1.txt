@@ -1,9 +1,0 @@
-# Solo exploración guiada. El stack futuro se conserva en requirements.txt.
-# Instalación optativa en un entorno virtual; Python 3.12.
-pandas>=2.2,<4
-matplotlib>=3.8,<4
-nbconvert>=7.16,<8
-nbclient>=0.10,<1
-nbformat>=5.10,<6
-ipykernel>=6.29,<8
-fg-data-profiling>=4.20,<5
